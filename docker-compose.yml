@@ -1,0 +1,43 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: rag_researcher-postgres
+    environment:
+      POSTGRES_USER: rag_researcher
+      POSTGRES_PASSWORD: rag_researcher
+      POSTGRES_DB: rag_researcher
+    ports:
+      - "5432:5432"
+    volumes:
+      - D:/docker-data/rag_researcher/postgres:/var/lib/postgresql/data
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.0
+    container_name: rag_researcher-elasticsearch
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+    ports:
+      - "9200:9200"
+    volumes:
+      - D:/docker-data/rag_researcher/elasticsearch:/usr/share/elasticsearch/data
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.15.0
+    container_name: rag_researcher-kibana
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    ports:
+      - "5601:5601"
+    depends_on:
+      - elasticsearch
+
+
+  redis:
+    image: redis:latest
+    container_name: rag_researcher-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - D:/docker-data/rag_researcher/redis:/data

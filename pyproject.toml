@@ -1,0 +1,92 @@
+[project]
+name = "rag_researcher"
+version = "0.1.0"
+description = "Agentic RAG system for AI research papers with ingestion, retrieval, generation, and LangGraph workflow."
+requires-python = ">=3.13"
+dependencies = [
+    "apscheduler>=3.11.1",
+    "asyncpg>=0.31.0",
+    "docling>=2.61.0",
+    "fastapi>=0.125.0",
+    "huggingface-hub>=1.16.1",
+    "langfuse>=3.9.0",
+    "langgraph>=1.2.2",
+    "pydantic>=2.13.4",
+    "pydantic-settings>=2.12.0",
+    "pymupdf>=1.26.7",
+    "pypdf>=6.4.0",
+    "python-dotenv>=1.2.2",
+    "redis>=7.1.0",
+    "requests>=2.32.5",
+    "sentence-transformers>=5.2.0",
+    "streamlit>=1.64.0",
+    "torch>=2.12.0",
+    "uvicorn>=0.38.0",
+]
+
+[project.scripts]
+rag_researcher-ingest = "rag_researcher.cli.ingest:main"
+rag_researcher-arxiv-fetch = "rag_researcher.cli.arxiv_fetch:main"
+rag_researcher-paper-download = "rag_researcher.cli.paper_download:main"
+rag_researcher-paper-parse = "rag_researcher.cli.paper_parse:main"
+rag_researcher-rebuild-paper = "rag_researcher.cli.rebuild_paper:main"
+rag_researcher-paper-batch = "rag_researcher.cli.paper_batch:main"
+rag_researcher-download-random-papers = "rag_researcher.cli.download_random_papers:main"
+rag_researcher-prepare-ablation-corpus = "rag_researcher.cli.prepare_ablation_corpus:main"
+rag_researcher-pipeline = "rag_researcher.cli.pipeline:main"
+rag_researcher-chunk = "rag_researcher.cli.chunk:main"
+rag_researcher-embed = "rag_researcher.cli.embed:main"
+rag_researcher-index = "rag_researcher.cli.index_embeddings:main"
+rag_researcher-search = "rag_researcher.cli.search:main"
+rag_researcher-ask = "rag_researcher.cli.ask:main"
+rag_researcher-agent-test = "rag_researcher.cli.agent_test:main"
+rag_researcher-eval = "rag_researcher.cli.evaluate:main"
+rag_researcher-generate-eval-qa = "rag_researcher.cli.generate_eval_qa:main"
+rag_researcher-reset-data = "rag_researcher.cli.reset_data:main"
+
+[dependency-groups]
+dev = [
+    "mypy>=1.19.0",
+    "pytest>=9.0.3",
+    "ruff>=0.14.8",
+]
+
+[tool.uv]
+package = true
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cu130", marker = "sys_platform == 'win32' or sys_platform == 'linux'" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["B008", "E402", "E501", "I001", "UP035", "UP037"]
+
+[tool.mypy]
+python_version = "3.13"
+packages = ["rag_researcher", "app"]
+ignore_missing_imports = true
+warn_unused_ignores = false
+disallow_untyped_defs = false
+check_untyped_defs = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
