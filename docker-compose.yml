@@ -9,7 +9,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - D:/docker-data/rag_researcher/postgres:/var/lib/postgresql/data
+      - ./docker-data/postgres:/var/lib/postgresql/data
 
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.15.0
@@ -21,7 +21,7 @@ services:
     ports:
       - "9200:9200"
     volumes:
-      - D:/docker-data/rag_researcher/elasticsearch:/usr/share/elasticsearch/data
+      - ./docker-data/elasticsearch:/usr/share/elasticsearch/data
 
   kibana:
     image: docker.elastic.co/kibana/kibana:8.15.0
@@ -33,11 +33,10 @@ services:
     depends_on:
       - elasticsearch
 
-
   redis:
     image: redis:latest
     container_name: rag_researcher-redis
     ports:
       - "6379:6379"
     volumes:
-      - D:/docker-data/rag_researcher/redis:/data
+      - ./docker-data/redis:/data

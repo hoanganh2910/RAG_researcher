@@ -1,299 +1,163 @@
 # RAG_researcher
 
-> Agentic RAG for complex PDF question answering, with structured chunks, hybrid retrieval, LangGraph control flow, and reproducible retrieval evaluation.
-
-[简体中文](README.zh-CN.md) | English
+> **A local-first, Agentic RAG engine engineered for complex documents and long-form technical literature.**
 
 ![Python](https://img.shields.io/badge/Python-3.13+-3776AB?style=flat-square&logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-API-009688?style=flat-square&logo=fastapi&logoColor=white)
+![Streamlit](https://img.shields.io/badge/Streamlit-UI-FF4B4B?style=flat-square&logo=streamlit&logoColor=white)
 ![LangGraph](https://img.shields.io/badge/LangGraph-Agentic_Workflow-1C3C3C?style=flat-square)
-![Docling](https://img.shields.io/badge/Docling-PDF_Parsing-374151?style=flat-square)
-![Ollama](https://img.shields.io/badge/Ollama-Qwen3.5--4B-111827?style=flat-square)
-![Qwen3 Embedding](https://img.shields.io/badge/Qwen3--Embedding--4B-Embeddings-7C3AED?style=flat-square)
 ![Elasticsearch](https://img.shields.io/badge/Elasticsearch-Hybrid_Search-005571?style=flat-square&logo=elasticsearch&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Metadata-4169E1?style=flat-square&logo=postgresql&logoColor=white)
 ![Redis](https://img.shields.io/badge/Redis-Cache-DC382D?style=flat-square&logo=redis&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-pytest-blue?style=flat-square)
 
-RAG_researcher is a local-first Agentic RAG system for long PDFs such as research papers, enterprise knowledge-base files, and technical manuals. It focuses on the failure modes of vanilla RAG in complex documents: unstable long-context recall, figure/table evidence, query rewriting, reranking, and citation-level source tracing.
+---
 
-## Highlights
+## 📌 Overview
 
-- **Agentic chunking**: uses a local `qwen3.5:4b` model through Ollama to plan semantic boundaries over parsed document blocks.
-- **Body / visual / fused chunks**: stores body text, table Markdown, figure captions, nearby text, and retrieval-only fused evidence as separate chunk types.
-- **Hybrid retrieval**: Elasticsearch BM25 + Qwen3-Embedding-4B dense retrieval + optional HyDE + RRF fusion.
-- **Reranking**: optional `BAAI/bge-reranker-v2-m3` reranker with candidate and content-length limits.
-- **LangGraph workflow**: guardrail, routing, retrieval, rerank, document grading, query rewriting, answer generation, and give-up path.
-- **Evaluation framework**: fixed-vs-agentic chunk ablation, visual/table subset evaluation, retrieval-stack comparison, rerank sampling, latency, Recall@k, MRR@10, and NDCG@10.
+Standard vanilla RAG often fails on complex, multi-page PDFs (such as scientific papers and enterprise manuals) due to degraded long-context recall, lost table/figure context, and rigid retrieval flows.
 
-## Architecture
+**RAG_researcher** tackles these challenges with:
+- **Agentic Chunking**: Intelligently identifies document section boundaries rather than blindly splitting by character counts.
+- **Multimodal Evidence Handling**: Preserves markdown tables, figure captions, and structured metadata alongside body text.
+- **Hybrid Retrieval & Reranking**: Combines Elasticsearch BM25, dense vector embeddings, optional HyDE query expansion, and cross-encoder reranking.
+- **LangGraph Agent Workflow**: Dynamically grades retrieved evidence, rewrites deficient queries, and ensures verifiable source attribution.
+- **Interactive Web UI & REST API**: Includes a Streamlit chat dashboard for uploading documents and testing queries, plus high-performance FastAPI endpoints.
+
+---
+
+## 🏗️ Architecture
 
 ### System Architecture
-
-![RAG_researcher system architecture](docs/images/rag_researcher-system-architecture.png)
-
-RAG_researcher is split into an offline knowledge-processing path and an online Agentic RAG path.
-
-Offline processing turns raw PDFs into searchable evidence:
-
-```text
-arXiv / uploaded PDFs / enterprise documents
- -> fetch metadata and download PDFs
- -> parse PDFs with Docling / PyMuPDF
- -> store structured paper_blocks
- -> plan agentic chunks with qwen3.5:4b
- -> build body / visual / fused chunks
- -> validate boundaries and link visual evidence
- -> embed chunks with Qwen3-Embedding-4B
- -> store metadata in PostgreSQL and search indexes in Elasticsearch
-```
-
-Online retrieval answers user queries through FastAPI and LangGraph:
-
-```text
-Client / CLI / HTTP
- -> FastAPI endpoints
- -> LangGraph guardrail and router
- -> direct answer OR local RAG
- -> optional HyDE
- -> Qwen3-Embedding-4B query embedding
- -> Elasticsearch BM25 + vector search
- -> RRF fusion
- -> BGE-Reranker
- -> top-k context chunks
- -> qwen3.5:4b document grading
- -> generate answer OR rewrite query OR give up
- -> answer with sources / optional SSE stream
-```
-
-PostgreSQL stores papers, files, parsed blocks, chunks, and embeddings. Elasticsearch serves BM25 and vector retrieval. Redis is used for QA/runtime cache and feedback buffering. Langfuse traces, trace summaries, retrieval metadata, rerank status, and pytest regression tests provide observability and evaluation support.
+![RAG_researcher System Architecture](docs/images/rag_researcher-system-architecture.png)
 
 ### Agent Workflow
-
-![RAG_researcher LangGraph workflow](docs/images/rag_researcher-agent-workflow.png)
-
-The online path is:
+![RAG_researcher LangGraph Workflow](docs/images/rag_researcher-agent-workflow.png)
 
 ```text
-query
- -> guardrail
- -> router
- -> hybrid_retrieve
- -> rerank
- -> grade_documents
- -> generate_answer | rewrite_query | give_up
+User Query
+  │
+  ▼
+[ Guardrail & Intent Classification ]
+  │
+  ├─► Direct Answer (General queries)
+  │
+  └─► [ Hybrid Retrieval: BM25 + Vector Search (RRF) ]
+        │
+        ▼
+      [ Cross-Encoder Reranker ]
+        │
+        ▼
+      [ Document Grader (Relevance Check) ]
+        │
+        ├── All Relevant ──► [ Answer Generator with Citations ]
+        │
+        └── Low Relevance ─► [ Query Rewriter ] ──► (Loop back to Search)
 ```
 
-## Evaluation Results
+---
 
-![RAG_researcher evaluation summary](docs/images/rag_researcher-evaluation-summary.png)
+## ⚡ Quick Start
 
-The current benchmark is retrieval-focused. It measures whether the retrieved chunks hit the gold evidence chunks/pages and does **not** claim end-to-end answer correctness.
+### 1. Prerequisites
+- Python 3.13+
+- [uv](https://github.com/astral-sh/uv) (recommended)
+- Docker & Docker Compose
+- [Ollama](https://ollama.ai) running locally
 
-### Evaluation Corpus
+### 2. Installation
 
-| Item | Value |
-| --- | ---: |
-| Papers | 10 |
-| Parsed paper blocks | 998 |
-| Indexed chunks | 882 |
-| QA cases | 100 |
-| Figure/table QA cases | 73 |
-| Embedding model | `Qwen3-Embedding-4B` |
-| Decision/chunk model | `qwen3.5:4b` via Ollama |
-
-Chunk distribution:
-
-| Strategy / Type | Count |
-| --- | ---: |
-| `fixed:fixed` | 587 |
-| `agentic:retrieval_unit` | 199 |
-| `agentic:figure_caption` | 39 |
-| `agentic:table` | 21 |
-| `agentic_fusion:fused` | 36 |
-
-### Fixed vs Agentic Chunk Ablation
-
-Dataset: `data/eval/qa_ablation_100.json`  
-Report: `reports/evaluation/ablation_10paper_hybrid.json`
-
-| Variant | Cases | P50 ms | P95 ms | Recall@1 | Recall@3 | Recall@5 | Recall@10 | MRR@10 | NDCG@10 |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Fixed chunks + hybrid retrieval | 100 | 69.179 | 84.223 | 0.0683 | 0.1682 | 0.2337 | 0.3784 | 0.6154 | 0.3720 |
-| Agentic chunks + hybrid retrieval | 100 | 58.715 | 79.781 | 0.0963 | 0.2327 | 0.3381 | 0.5301 | 0.7755 | 0.5181 |
-| Relative lift | - | - | - | +41.0% | +38.4% | +44.7% | +40.1% | +26.0% | +39.3% |
-
-### Visual/Table QA Ablation
-
-This subset evaluates figure/table questions only.
-
-| Variant | Cases | P50 ms | P95 ms | Recall@1 | Recall@3 | Recall@5 | Recall@10 | MRR@10 | NDCG@10 |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Fixed chunks + hybrid retrieval | 73 | 59.296 | 65.624 | 0.0730 | 0.1583 | 0.2045 | 0.3413 | 0.6432 | 0.3535 |
-| Agentic visual/fused chunks + hybrid retrieval | 73 | 58.479 | 80.008 | 0.0886 | 0.1814 | 0.2686 | 0.4711 | 0.7697 | 0.4699 |
-| Relative lift | - | - | - | +21.4% | +14.6% | +31.3% | +38.0% | +19.7% | +32.9% |
-
-### Retrieval Stack Sample
-
-Dataset: `data/eval/qa_ablation_sample30.json`  
-Report: `reports/evaluation/retrieval_stack_sample30.json`
-
-| Variant | Cases | P50 ms | P95 ms | Recall@10 | MRR@10 | NDCG@10 |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| BM25 | 30 | 5.528 | 6.332 | 0.5256 | 0.7583 | 0.5170 |
-| Dense | 30 | 47.132 | 87.914 | 0.5395 | 0.7585 | 0.5245 |
-| Hybrid | 30 | 55.310 | 62.539 | 0.5145 | 0.8014 | 0.5223 |
-| Hybrid + HyDE | 30 | 939.924 | 1277.299 | 0.5284 | 0.7900 | 0.5270 |
-
-### Rerank Sample
-
-Dataset: `data/eval/qa_ablation_rerank_sample10.json`  
-Report: `reports/evaluation/rerank_sample10.json`
-
-| Variant | Cases | P50 ms | P95 ms | Recall@10 | MRR@10 | NDCG@10 |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Hybrid | 10 | 59.122 | 7590.011 | 0.4548 | 0.7958 | 0.4740 |
-| Hybrid + HyDE + Rerank | 10 | 27991.271 | 32062.291 | 0.5321 | 0.9000 | 0.5661 |
-
-Reranking improves the small sample metrics but is still expensive on local hardware, so the full 100-QA rerank run is intentionally not used as the main headline number.
-
-## Quick Start
-
-### 1. Install dependencies
-
-```powershell
+Clone the repository and install dependencies:
+```bash
+git clone https://github.com/hoanganh2910/RAG_researcher.git
+cd RAG_researcher
 uv sync
 ```
 
-### 2. Start infrastructure
+### 3. Start Infrastructure Services
 
-```powershell
-docker compose up -d postgres elasticsearch redis
+Spin up PostgreSQL, Elasticsearch, Kibana, and Redis:
+```bash
+docker compose up -d
 ```
 
-The current Docker compose file stores PostgreSQL data on an E-drive bind mount to avoid filling the system drive.
+### 4. Configuration
 
-### 3. Prepare local models
-
-Pull the local decision/chunking model:
-
-```powershell
-ollama pull qwen3.5:4b
+Copy the example environment file and configure your settings:
+```bash
+cp .env.example .env
 ```
 
-Download Qwen3-Embedding-4B and point `.env` to the local path:
-
-```powershell
-uv run hf download Qwen/Qwen3-Embedding-4B --local-dir E:\models\Qwen3-Embedding-4B
+Ensure your local Ollama models are pulled:
+```bash
+ollama pull nomic-embed-text
+ollama pull llama3.2
 ```
 
-```env
-EMBEDDING_MODEL=E:\models\Qwen3-Embedding-4B
-EMBEDDING_DIMENSIONS=2560
-AGENT_DECISION_MODEL=qwen3.5:4b
-AGENTIC_CHUNK_MODEL=qwen3.5:4b
-RERANKER_MODEL=BAAI/bge-reranker-v2-m3
+### 5. Run the Application
+
+**Start the FastAPI Backend:**
+```bash
+uv run uvicorn app.main:app --reload --port 8000
 ```
+API Documentation will be available at [http://localhost:8000/docs](http://localhost:8000/docs).
 
-### 4. Run the API
-
-```powershell
-uv run uvicorn app.main:app --reload
+**Start the Streamlit Web Interface:**
+```bash
+uv run streamlit run frontend.py
 ```
+Open your browser at [http://localhost:8501](http://localhost:8501) to interact with the chatbot and upload PDFs.
 
-Useful endpoints:
+---
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/api/v1/health` | service health |
-| `POST` | `/api/v1/search` | retrieval search |
-| `POST` | `/api/v1/ask` | regular RAG answer |
-| `POST` | `/api/v1/agent` | LangGraph agentic RAG |
-| `POST` | `/api/v1/stream` | streaming answer |
+## 🔌 API Endpoints
 
-## Reproduce the Evaluation
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `GET` | `/api/v1/health` | Service health status check |
+| `POST` | `/api/v1/search` | Direct hybrid retrieval (BM25 + Dense) |
+| `POST` | `/api/v1/ask` | Single-shot RAG question answering |
+| `POST` | `/api/v1/agent` | Full LangGraph agentic reasoning flow |
+| `POST` | `/api/v1/stream` | Server-Sent Events (SSE) streaming response |
 
-Reset data:
+---
 
-```powershell
-uv run rag_researcher-reset-data --yes
-```
+## 🧪 Testing & Evaluation
 
-Prepare the 10-paper ablation corpus, including fixed chunks, agentic chunks, fused chunks, embeddings, Elasticsearch indexing, and 100 QA cases:
-
-```powershell
-uv run rag_researcher-prepare-ablation-corpus `
-  --papers-dir E:\rag_researcher-data\papers `
-  --limit 10 `
-  --qa-per-paper 10 `
-  --output data/eval/qa_ablation_100.json `
-  --plan-output data/eval/ablation_10paper_plan.json `
-  --planner-provider ollama `
-  --planner-model qwen3.5:4b
-```
-
-Run the main fixed-vs-agentic and visual/table ablation:
-
-```powershell
-uv run rag_researcher-eval benchmark `
-  --dataset data/eval/qa_ablation_100.json `
-  --plan data/eval/ablation_10paper_hybrid_plan.json `
-  --output reports/evaluation/ablation_10paper_hybrid.json `
-  --markdown reports/evaluation/ablation_10paper_hybrid.md
-```
-
-Run the retrieval-stack sample:
-
-```powershell
-uv run rag_researcher-eval benchmark `
-  --dataset data/eval/qa_ablation_sample30.json `
-  --plan data/eval/retrieval_stack_sample30_plan.json `
-  --output reports/evaluation/retrieval_stack_sample30.json `
-  --markdown reports/evaluation/retrieval_stack_sample30.md
-```
-
-Run the rerank sample:
-
-```powershell
-uv run rag_researcher-eval benchmark `
-  --dataset data/eval/qa_ablation_rerank_sample10.json `
-  --plan data/eval/rerank_sample10_plan.json `
-  --output reports/evaluation/rerank_sample10.json `
-  --markdown reports/evaluation/rerank_sample10.md
-```
-
-## Project Structure
-
-```text
-app/                         FastAPI application and API routes
-src/rag_researcher/agent/           LangGraph workflow and agent policies
-src/rag_researcher/chunking/        fixed, block, and agentic chunking
-src/rag_researcher/cli/             ingestion, indexing, search, and evaluation CLIs
-src/rag_researcher/evaluation/      benchmark framework and retrieval metrics
-src/rag_researcher/embedding/       embedding encoder and repository
-src/rag_researcher/papers/          arXiv download and PDF parsing
-src/rag_researcher/retrieval/       Elasticsearch vector/BM25 search and RRF
-src/rag_researcher/reranking/       BGE reranker wrapper
-reports/evaluation/           benchmark outputs
-docs/images/                  architecture and evaluation figures
-tests/                        pytest test suite
-```
-
-## Tests
-
-```powershell
+Run the unit test suite:
+```bash
 uv run pytest
 ```
 
-Targeted retrieval tests:
-
-```powershell
-uv run pytest tests/test_retrieval.py
+Execute retrieval benchmarks:
+```bash
+uv run rag_researcher-eval benchmark --dataset data/eval/qa_gold.json
 ```
 
-## Notes
+---
 
-- The benchmark numbers are local experimental results on the current 10-paper corpus.
-- `Answer Acc` is not used as a headline metric here because this evaluation run is designed for retrieval and citation evidence, not LLM answer judging.
-- Rerank quality is promising but latency-heavy; current optimization limits candidate count and rerank input length.
-- This repository currently does not include a license file.
+## 📂 Project Structure
+
+```text
+├── app/                        # FastAPI application, routing, and schemas
+├── frontend.py                 # Streamlit interactive chat UI
+├── src/rag_researcher/
+│   ├── agent/                  # LangGraph state machine, nodes, and policies
+│   ├── chunking/               # Agentic, block, and fixed chunking algorithms
+│   ├── cli/                    # Command-line tools for ingestion and evaluation
+│   ├── embedding/              # Vector embedding wrappers and repositories
+│   ├── evaluation/             # Evaluation metrics and benchmark harness
+│   ├── ingestion/              # Document loaders and hashing
+│   ├── papers/                 # PDF parsers (Docling, PyMuPDF) and arXiv client
+│   ├── pipeline/               # End-to-end ingestion pipeline runners
+│   ├── reranking/              # Cross-encoder reranker wrappers
+│   └── retrieval/              # Elasticsearch vector/BM25 search & HyDE
+├── docker-compose.yml          # Container configuration (Postgres, ES, Redis)
+├── pyproject.toml              # Project dependencies and CLI entrypoints
+└── tests/                      # Automated test suite (200+ unit tests)
+```
+
+---
+
+## 📝 License
+
+Distributed under the MIT License. See `LICENSE` for more information.
