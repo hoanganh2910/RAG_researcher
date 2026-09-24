@@ -16,34 +16,37 @@ import pypdf
 # --- SIDEBAR: Upload PDF ---
 with st.sidebar:
     st.header("📂 Nạp Tài Liệu")
-    uploaded_file = st.file_uploader("Kéo thả file (PDF, TXT, MD) vào đây", type=["pdf", "txt", "md"])
+    uploaded_files = st.file_uploader("Kéo thả file (PDF, TXT, MD) vào đây", type=["pdf", "txt", "md"], accept_multiple_files=True)
     
-    if uploaded_file is not None:
+    if uploaded_files:
         if st.button("Nạp vào cơ sở dữ liệu"):
             with st.spinner("Đang phân tích và nạp tài liệu..."):
-                # Extract text if PDF
-                if uploaded_file.name.endswith('.pdf'):
-                    pdf_reader = pypdf.PdfReader(uploaded_file)
-                    text_content = ""
-                    for page in pdf_reader.pages:
-                        text_content += page.extract_text() + "\n"
-                    
-                    # Save extracted text to a .txt file for ingestion
-                    fd, temp_path = tempfile.mkstemp(suffix=".txt")
-                    with os.fdopen(fd, 'w', encoding='utf-8') as f:
-                        f.write(text_content)
-                else:
-                    # Save as original extension for txt/md
-                    ext = os.path.splitext(uploaded_file.name)[1]
-                    fd, temp_path = tempfile.mkstemp(suffix=ext)
-                    with os.fdopen(fd, 'wb') as f:
-                        f.write(uploaded_file.getvalue())
+                temp_dir = tempfile.mkdtemp()
+                for uf in uploaded_files:
+                    # Extract text if PDF
+                    if uf.name.endswith('.pdf'):
+                        pdf_reader = pypdf.PdfReader(uf)
+                        text_content = ""
+                        for page in pdf_reader.pages:
+                            text_content += page.extract_text() + "\n"
+                        
+                        text_content = text_content.replace("\x00", "")
+                        
+                        # Save extracted text to a .txt file for ingestion
+                        temp_path = os.path.join(temp_dir, uf.name + ".txt")
+                        with open(temp_path, 'w', encoding='utf-8') as f:
+                            f.write(text_content)
+                    else:
+                        # Save as original extension for txt/md
+                        temp_path = os.path.join(temp_dir, uf.name)
+                        with open(temp_path, 'wb') as f:
+                            f.write(uf.getvalue())
                 
                 # Run the full ingestion pipeline
                 try:
                     with st.status("Đang xử lý tài liệu (Vui lòng đợi...)", expanded=True) as status:
-                        st.write("⏳ Đang nạp tài liệu thô...")
-                        res_ingest = subprocess.run(["uv", "run", "rag_researcher-ingest", temp_path], capture_output=True, text=True, check=True, cwd=os.getcwd())
+                        st.write(f"⏳ Đang nạp {len(uploaded_files)} tài liệu thô...")
+                        res_ingest = subprocess.run(["uv", "run", "rag_researcher-ingest", temp_dir], capture_output=True, text=True, check=True, cwd=os.getcwd())
                         
                         st.write("✂️ Đang chia nhỏ đoạn văn bản (Chunking)...")
                         res_chunk = subprocess.run(["uv", "run", "rag_researcher-chunk"], capture_output=True, text=True, check=True, cwd=os.getcwd())
@@ -55,17 +58,45 @@ with st.sidebar:
                         res_index = subprocess.run(["uv", "run", "rag_researcher-index"], capture_output=True, text=True, check=True, cwd=os.getcwd())
                         
                         status.update(label="Hoàn tất! Tài liệu đã sẵn sàng.", state="complete", expanded=False)
-                    st.success("Tài liệu đã được nạp thành công và có thể trò chuyện ngay!")
+                    st.success(f"Đã nạp thành công {len(uploaded_files)} tài liệu!")
                 except subprocess.CalledProcessError as e:
                     st.error(f"Lỗi khi nạp tài liệu (Code {e.returncode}):")
                     st.text_area("Chi tiết lỗi (Stderr)", e.stderr, height=150)
                     st.text_area("Chi tiết lỗi (Stdout)", e.stdout, height=150)
                 finally:
                     # Cleanup
-                    if os.path.exists(temp_path):
-                        os.remove(temp_path)
+                    import shutil
+                    if os.path.exists(temp_dir):
+                        shutil.rmtree(temp_dir)
+
+    st.divider()
+    st.header("📊 Đánh Giá & Benchmark")
+    
+    if st.button("1. Tự động sinh bộ câu hỏi (QA)"):
+        with st.spinner("Đang đọc tài liệu và sinh bộ câu hỏi... (Cần vài phút)"):
+            try:
+                res = subprocess.run(["uv", "run", "rag_researcher-generate-eval-qa"], capture_output=True, text=True, check=True, cwd=os.getcwd())
+                st.success("✅ Đã tạo xong bộ câu hỏi `qa_gold.json`!")
+            except subprocess.CalledProcessError as e:
+                st.error("❌ Lỗi khi sinh câu hỏi!")
+                st.text_area("Chi tiết lỗi (Stderr)", e.stderr, height=150)
+                
+    if st.button("2. Chạy Benchmark"):
+        with st.spinner("Đang chấm điểm thuật toán RAG..."):
+            try:
+                res = subprocess.run(["uv", "run", "rag_researcher-eval", "benchmark"], capture_output=True, text=True, check=True, cwd=os.getcwd())
+                st.success("✅ Đánh giá thành công! Bạn có thể xem kết quả bên phải.")
+            except subprocess.CalledProcessError as e:
+                st.error("❌ Lỗi khi chạy benchmark!")
+                st.text_area("Chi tiết lỗi (Stderr)", e.stderr, height=150)
 
 # --- MAIN CHAT INTERFACE ---
+report_path = "reports/evaluation/benchmark.md"
+if os.path.exists(report_path):
+    with st.expander("📊 Xem Báo cáo Kết quả Benchmark mới nhất", expanded=False):
+        with open(report_path, "r", encoding="utf-8") as f:
+            st.markdown(f.read())
+
 if "messages" not in st.session_state:
     st.session_state.messages = []
 

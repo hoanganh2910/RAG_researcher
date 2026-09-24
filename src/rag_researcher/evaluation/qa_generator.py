@@ -9,7 +9,7 @@ import asyncpg
 from rag_researcher.config import settings
 
 
-async def generate_eval_qa(*, paper_id: int, num_questions: int, output: Path) -> int:
+async def generate_eval_qa(*, paper_id: int | None = None, num_questions: int, output: Path) -> int:
     chunks = await fetch_eval_candidate_chunks(paper_id)
     items = [qa_from_chunk(chunk, offset) for offset, chunk in enumerate(chunks[:num_questions])]
     existing = load_existing_items(output)
@@ -20,38 +20,53 @@ async def generate_eval_qa(*, paper_id: int, num_questions: int, output: Path) -
     return len(items)
 
 
-async def fetch_eval_candidate_chunks(paper_id: int) -> list[dict[str, object]]:
+async def fetch_eval_candidate_chunks(paper_id: int | None) -> list[dict[str, object]]:
     conn = await asyncpg.connect(settings.postgres_dsn)
     try:
-        rows = await conn.fetch(
-            """
-            SELECT
-                c.id AS source_chunk_id,
-                c.section_name,
-                c.content,
-                p.id AS paper_id,
-                p.arxiv_id
-            FROM document_chunks c
-            JOIN documents d ON d.id = c.document_id
-            JOIN papers p ON p.source_url = split_part(d.source, '#', 1)
-            WHERE p.id = $1
-            ORDER BY c.chunk_index
-            """,
-            paper_id,
-        )
-        return [dict(row) for row in rows if row["section_name"]]
+        if paper_id is not None:
+            rows = await conn.fetch(
+                """
+                SELECT
+                    c.id AS source_chunk_id,
+                    c.section_name,
+                    c.content,
+                    p.id AS paper_id,
+                    p.arxiv_id
+                FROM document_chunks c
+                JOIN documents d ON d.id = c.document_id
+                JOIN papers p ON p.source_url = split_part(d.source, '#', 1)
+                WHERE p.id = $1
+                ORDER BY c.chunk_index
+                """,
+                paper_id,
+            )
+        else:
+            rows = await conn.fetch(
+                """
+                SELECT
+                    c.id AS source_chunk_id,
+                    c.section_name,
+                    c.content,
+                    d.id AS paper_id,
+                    'uploaded' AS arxiv_id
+                FROM document_chunks c
+                JOIN documents d ON d.id = c.document_id
+                ORDER BY c.chunk_index
+                """
+            )
+        return [dict(row) for row in rows]
     finally:
         await conn.close()
 
 
 def qa_from_chunk(chunk: dict[str, object], offset: int) -> dict[str, object]:
-    section = str(chunk["section_name"])
+    section = str(chunk.get("section_name") or "General Context")
     keywords = extract_keywords(str(chunk["content"]))
     return {
         "paper_id": int(str(chunk["paper_id"])),
         "arxiv_id": str(chunk["arxiv_id"]),
         "query": query_for_section(section, offset),
-        "gold_sections": [section],
+        "gold_sections": [section] if chunk.get("section_name") else [],
         "gold_keywords": keywords,
         "source_chunk_id": int(str(chunk["source_chunk_id"])),
     }
