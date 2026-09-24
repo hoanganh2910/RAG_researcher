@@ -23,6 +23,9 @@ async def ingest(path: str) -> int:
 
 
 def main() -> None:
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
     load_dotenv()
 
     if len(sys.argv) != 2:

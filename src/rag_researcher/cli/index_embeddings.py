@@ -11,6 +11,9 @@ __all__ = ["index_embeddings"]
 
 
 def main() -> None:
+    import sys
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     load_dotenv()
     parser = argparse.ArgumentParser(description="Index RAG_researcher chunk embeddings into Elasticsearch")
     parser.set_defaults(recreate=True)
